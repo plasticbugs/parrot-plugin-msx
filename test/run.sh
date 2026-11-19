@@ -108,13 +108,21 @@ card_check() {
 }
 
 # ---- the plugin in src/ (tools/new-plugin.py rewrites this part) ----
+# (C-BIOS for the Mac builds: src/cbios_rom.h, from vendor/cbios)
+[ -f "$kit/src/cbios_rom.h" ] || "$kit/tools/cbios.sh" "$kit/src/cbios_rom.h"
 if wanted msx; then
-    PC_END=3000 PC_SCRIPT="500:joy=up+fire 900:joy= 1200:key=5 1500:key= 2000:joy=fire2 2300:joy=" \
-        run msx "$kit/src" 'note "MSX: 3 presses"' 'back to the menu'
+    # opened without a file: it says so, and RESET goes back
+    PC_END=3000 PC_SCRIPT="1500:joy=fire 1700:joy=" \
+        run msx "$kit/src" 'note "MSX: no file opened"' 'back to the menu'
 fi
 if wanted msx-usb; then
-    PC_END=4000 PC_SCRIPT="2000:pad=south+l 2100:lstick=1500,-900 2200:rstick=-2048,2047 2400:pad=east+up 2600:keydown=0B 2650:keyup=0B 2700:mods=02 2750:keydown=1E 2800:keyup=1E 2850:mods=0 2900:keydown=0C 2950:keyup=0C 3000:keydown=2A 3050:keyup=2A 3100:mouse=40,20,1,1 3200:mouse=-10,5,0 3800:snap=usb" \
-        run msx-usb "$kit/src" 'usb: the port is a host' 'back to the menu'
+    # test/carts/input.asm from the card: a USB keyboard, the controller, a pad, a mouse
+    t=$out/msx-tree; rm -rf "$t" "$out/card-msx.cdr"; mkdir -p "$t/MSX"
+    (cd "$kit/test/carts" && sjasmplus --nologo --msg=err --raw="$t/MSX/INPUT.mx1" input.asm >/dev/null)
+    hdiutil create -quiet -srcfolder "$t" -fs MS-DOS -layout NONE -size 64m -format UDTO -o "$out/card-msx"
+    PC_CARD=$out/card-msx.cdr PC_OPEN=/MSX/INPUT.mx1 PC_END=6000 \
+    PC_SCRIPT="3500:keydown=04 3500:mods=02 3500:joy=up+fire 3600:pad=south+left 4000:snap=keys 4200:keyup=04 4200:mods=0 4200:joy= 4200:pad=off 4500:mouse=40,20,1 5000:mouse=-10,5,0 5500:snap=mouse" \
+        run msx-usb "$kit/src" 'usb: the port is a host' 'note "MSX PLAIN GUESS"' 'back to the menu'
 fi
 # ---- the examples ----
 # (left out with examples/: tools/new-plugin.py --examples keeps them)

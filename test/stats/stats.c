@@ -5,6 +5,10 @@
 //
 //   stats ROM FRAMES [MAPPER] [OUT_DIR]   (MAPPER: a tag, e.g. KONAMISCC; - to guess)
 //
+// STATS_KEYS="time row mask down|up ..." (time in seconds, as
+// test/carts/omsx-dump.tcl's OMSX_KEYS) presses those keyboard matrix bits
+// instead of the SPACE and fire now and then.
+//
 // Prints a line per second of frames and a summary: VRAM bytes a list,
 // the list's cost against its limit, the backlog (bytes the console is
 // still missing) and how long it lasted, and whether the console's VRAM
@@ -60,6 +64,21 @@ static int play(const uint8_t *b, size_t n, int *psg_bytes) {
 }
 
 static void press(int f) {
+#ifndef M33
+    const char *k = getenv("STATS_KEYS");
+    if (k) {
+        double t;
+        int row, mask, n;
+        char how[8];
+        while (sscanf(k, "%lf %d %d %7s%n", &t, &row, &mask, how, &n) == 4) {
+            if ((int)(t * 59.922 + 0.5) == f)   // (the TMS9918A's 59.922 frames a second)
+                for (int b = 0; b < 8; b++)
+                    if (mask >> b & 1) msx_key(row, b, how[0] == 'd');
+            k += n;
+        }
+        return;
+    }
+#endif
     const int s = f % 240;
     msx_key(8, 0, s >= 100 && s < 110);         // SPACE
     msx.joy[0] = (uint8_t)(s >= 160 && s < 170 ? JOY_A : 0);

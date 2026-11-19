@@ -213,7 +213,7 @@ static uint8_t joy_port(int port) {
         v = (uint8_t)(~msx.joy[port] & 0x3F);
     }
     v &= (uint8_t)((msx.psg[15] >> (2 * port) & 3) << 4 | 0xCF);   // pins 6 and 7 read only while they're out high
-    return v;                                   // bit 6: an international keyboard; bit 7: no tape
+    return v | 0x80;                            // bit 6 clear: an international keyboard; bit 7 set: no tape (as openMSX)
 }
 
 // ---- ports ------------------------------------------------------------------------

@@ -1,6 +1,8 @@
 // z80core.c -- builds vendor/z80/z80.c (Juergen Buchmueller's Z80, from
-// MAME by way of SMS Plus) as it is, unchanged, from here: the Mac tests and
-// the simulator build what is in src/. Its warnings are its own.
+// MAME by way of SMS Plus) from here: the Mac tests and the simulator build
+// what is in src/. Its warnings are its own. One change in it
+// (vendor/z80/VENDORED.md): Z80_M1_WAIT, the MSX's wait state on each
+// opcode fetch.
 #if defined(__clang__)
 #pragma clang diagnostic ignored "-Wunused-parameter"
 #pragma clang diagnostic ignored "-Wunused-function"
@@ -26,4 +28,5 @@
 #ifndef LSB_FIRST
 #define LSB_FIRST 1             // the register pairs, little-endian (as SMS Plus builds it)
 #endif
+#define Z80_M1_WAIT 1           // as an MSX: one wait state each M1 cycle
 #include "../vendor/z80/z80.c"

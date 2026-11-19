@@ -20,6 +20,10 @@
  *     terms of its usage and license at any time, including retroactively
  *   - This entire notice must remain in the source code.
  *
+ *	 This file has been changed for Parrot Cart's MSX plugin (2026):
+ *	  - Z80_M1_WAIT: T-states added to each opcode fetch (the EXEC and
+ *		EXEC_INLINE macros, marked "Parrot Cart"); 0 unless defined.
+ *
  *	 Changes in 2.7:
  *	  - removed z80_vm specific code, it's not needed (and never was).
  *   Changes in 2.6:
@@ -459,10 +463,22 @@ static __inline__ void BURNODD(int cycles, int opcodes, int cyclesum) {
 /***************************************************************
  * execute an opcode
  ***************************************************************/
+/* Parrot Cart: Z80_M1_WAIT more T-states for each opcode fetch (an M1
+ * cycle): the MSX adds a wait state to every one. 0 if not defined. The
+ * fourth byte of DD CB d op and FD CB d op isn't an M1 fetch. */
+#ifndef Z80_M1_WAIT
+#define Z80_M1_WAIT 0
+#endif
+#define M1_op Z80_M1_WAIT
+#define M1_cb Z80_M1_WAIT
+#define M1_dd Z80_M1_WAIT
+#define M1_fd Z80_M1_WAIT
+#define M1_ed Z80_M1_WAIT
+#define M1_xxcb 0
 #define EXEC(prefix, opcode)                                    \
 {                                                                \
     unsigned op = opcode;                                        \
-    CY(cc_##prefix[op]);                                        \
+    CY(cc_##prefix[op] + M1_##prefix);                            \
     (*Z80##prefix[op])();                                        \
 }
 
@@ -470,7 +486,7 @@ static __inline__ void BURNODD(int cycles, int opcodes, int cyclesum) {
 #define EXEC_INLINE(prefix, opcode)                                \
 {                                                                \
     unsigned op = opcode;                                        \
-    CY(cc_##prefix[op]);                                        \
+    CY(cc_##prefix[op] + M1_##prefix);                            \
     switch(op)                                                    \
     {                                                            \
     case 0x00:prefix##_##00();break; case 0x01:prefix##_##01();break; case 0x02:prefix##_##02();break; case 0x03:prefix##_##03();break; \
