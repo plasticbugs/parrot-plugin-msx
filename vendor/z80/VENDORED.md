@@ -5,11 +5,17 @@
   which took it from [pico-smsplus](https://github.com/PicoPlus-devel/pico-smsplus)
   at commit `51432b2ef1a13c33ba38c5b543fbeb776bab88f6`, SMS Plus's copy
   with the Pico port's deferred-interrupt handling.
-- Files: `z80.c`, `z80.h`, `z80daa.h`, `cpuintrf.h`, `osd_cpu.h`, unchanged
-  but for one change in `z80.c`: `Z80_M1_WAIT`, T-states added to each
-  opcode fetch, because the MSX puts a wait state on every M1 cycle. The
-  change is marked in the file and listed under its notice, as the
-  notice asks. Without the define it's the original.
+- Files: `z80.c`, `z80.h`, `z80daa.h`, `cpuintrf.h`, `osd_cpu.h`. All but
+  `z80.c` are unchanged. The changes in `z80.c`, each marked "Parrot Cart"
+  and listed under its notice, as the notice asks:
+  - `Z80_M1_WAIT`: T-states added to each opcode fetch, because the MSX
+    puts a wait state on every M1 cycle. It counts in the opcode
+    dispatch, the block instructions' repeats, the loop shortcuts
+    (`BURNODD`) and HALT (`z80_burn`). Without the define it's 0, as
+    before.
+  - The block instructions' repeats (`REPEAT_AT_ONCE`) charged a pass
+    twice when the time slice ran out in the middle of one. They now
+    loop until they break out themselves.
 - Ours: `shared.h`, which stands in for SMS Plus's header of that name so
   `z80.c` builds without the rest of SMS Plus. `src/z80core.c` compiles
   `z80.c`; `src/cpu.c` connects it to the MSX.

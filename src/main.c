@@ -1,7 +1,4 @@
-// SPDX-License-Identifier: MIT
-// Copyright (c) 2026 Parrot Cart
-//
-// MSX: MSX1 cartridge games on the ColecoVision.
+// main.c -- MSX: MSX1 cartridge games on the ColecoVision.
 //
 // The cart runs the MSX (msx.c: the Z80, the slots and mappers, the PSG's
 // registers, the keyboard) on core 0, a frame at a time, paced by the
