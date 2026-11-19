@@ -51,7 +51,7 @@ static uint8_t list[MIRROR_LIST_MAX];
 static size_t list_len;
 static bool list_out;           // made, not taken yet
 static uint32_t seen;           // the console's frame count the last list was made at
-static uint8_t bios[0xC000] __attribute__((aligned(4)));   // main ROM, then the logo ROM
+#define OWN_BIOS (CVPSRAM_CACHED + CVPSRAM_SIZE / 2)   // the player's BIOS, past the cartridge's room
 static uint8_t sram[0x2000] __attribute__((aligned(4)));
 static fs_t fs;
 static fs_file_t file;
@@ -135,12 +135,12 @@ static bool read_file(uint8_t *dst, uint32_t size, uint32_t max, sha1_t *h) {
     return true;
 }
 
-// the player's own BIOS: /MSX/MSX.ROM, 32K; true if it's there and read
+// the player's own BIOS: /MSX/MSX.ROM, 32K, into the PSRAM; true if it's there and read
 static bool own_bios(void) {
     fs_file_t f;
     if (fs_find(&fs, BIOS_PATH, &f) != FS_OK || f.is_dir || f.size != 0x8000) return false;
     if (fs_open(&fs, &f) != FS_OK) return false;
-    return read_file(bios, 0x8000, 0x8000, NULL);
+    return read_file(OWN_BIOS, 0x8000, 0x8000, NULL);
 }
 
 // ---- the cartridge's SRAM: <name>.sav ---------------------------------------------------
@@ -151,7 +151,7 @@ static uint32_t sav_seen, sav_change_t, sav_writes, sav_fails;
 static void sram_start(int kb) {
     sav_n = 0;
     if (!kb) return;
-    uint16_t nm[FS_LNAME];
+    static uint16_t nm[FS_LNAME];
     const int n = fs_name16(&fs, dir, file.first_clus, nm, FS_LNAME - 1);
     if (n <= 0) return;
     int stem = n;
@@ -166,8 +166,7 @@ static void sram_start(int kb) {
     bool made;
     if (fs_create(&fs, dir, sav_nm, sav_n, 0, &f, &made) != FS_OK) return;   // none yet
     if (f.size < 512 || fs_open(&fs, &f) != FS_OK) return;
-    static uint8_t tmp[0x2000];
-    if (read_file(tmp, (uint32_t)f.size, sizeof tmp, NULL)) memcpy(sram, tmp, f.size < sizeof tmp ? (size_t)f.size : sizeof tmp);
+    if (!read_file(sram, (uint32_t)f.size, sizeof sram, NULL)) memset(sram, 0xFF, sizeof sram);
 }
 
 static bool sram_write(void) {
@@ -309,14 +308,13 @@ int main(void) {
     sha1_done(&h, sum);
     const romtype_t rt = romtype_find(rom_name, sum, rom, real);
 
-    // the BIOS: the player's own, or C-BIOS
+    // the BIOS: the player's own, or C-BIOS (with its logo ROM)
     const bool own = own_bios();
-    if (!own) memcpy(bios, cbios_main, sizeof cbios_main);
-    memcpy(bios + 0x8000, cbios_logo, sizeof cbios_logo);   // (the logo is C-BIOS's: only with it)
     memset(sram, 0xFF, sizeof sram);
     sram_start(rt.sram_kb);
 
-    msx_init(bios, 0x8000, own ? NULL : bios + 0x8000, 0x4000);
+    if (own) msx_init(OWN_BIOS, 0x8000, NULL, 0);
+    else msx_init(cbios_main, sizeof cbios_main, cbios_logo, sizeof cbios_logo);
     msx_cart(rom, size, real, rt.mapper, rt.sram_kb ? sram : NULL, rt.sram_kb);
     msx_reset();
     sound_reset(&snd, rt.mapper == MAP_KONAMI_SCC);
