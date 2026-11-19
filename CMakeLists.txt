@@ -20,7 +20,7 @@ parrotcart_frames(msx)           # a whole picture every TV frame: the frame ker
 #   PSRAM                         the 8 MB PSRAM
 #   CARD                          the card: files and saves
 # To add one later, add its word here and its code to src/main.c.
-cvcart_features(msx PADS KEYBOARD MOUSE PSRAM)
+cvcart_features(msx PADS KEYBOARD MOUSE PSRAM CARD)
 
 # The plugin (docs/plugin-rules.md): the ID is yours for good; the version
 # is the release's tag without its v.

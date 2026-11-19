@@ -3,344 +3,341 @@
 //
 // MSX: MSX1 cartridge games on the ColecoVision.
 //
-// Made by tools/new-plugin.py, with USB game pads, a USB keyboard, a USB mouse
-// and the PSRAM. It builds and runs as it is, with each feature on the TV,
-// working. YOUR CODE marks where yours goes; take out what you don't want to
-// show. docs/features.md has the features, sdk/firmware/revc/sdk/README.md the
-// SDK.
+// The cart runs the MSX (msx.c: the Z80, the slots and mappers, the PSG's
+// registers, the keyboard) on core 0, a frame at a time, paced by the
+// console's TV frames. The MSX's video chip is a TMS9918A like the
+// console's, so its picture isn't drawn: mirror.c copies its VRAM and
+// registers to the console in the frame kernel's lists. Its sound goes to
+// the console's SN76489 (sound.c).
 //
-// How a plugin runs. The cart has two cores:
-//
-//   core 1  is the cartridge: it answers every read the console makes,
-//           from a small Z80 program (the SDK's frame kernel) that runs one
-//           list of video and sound writes every TV frame and reports the
-//           controller. cvf_start() starts it; you never touch it again.
-//   core 0  is this file: one loop that never waits for long.
-#include <stdarg.h>
+//   the BIOS       C-BIOS (built in), or the player's own MSX1 BIOS in
+//                  /MSX/MSX.ROM (32K)
+//   the cartridge  the file the menu opened (.mx1, .mx2: an MSX ROM), in
+//                  the PSRAM; its mapper from romtype.c
+//   its SRAM       the few cartridges with a battery: <name>.sav beside it
+//   the controls   the console's controller (or USB pad 1) is joystick 1,
+//                  USB pad 2 joystick 2, a USB keyboard the MSX's keyboard,
+//                  a USB mouse an MSX mouse in port 1 (keymap.h)
 #include <stdio.h>
 #include <string.h>
 
 #include "pico/stdlib.h"
 
-#include "cvdiag.h"             // a crash becomes a note on the menu's bottom line
-#include "cvframes.h"           // the console: cvf_*
-#include "font8.h"              // the menu's 8x8 font, ASCII 32-95
-#include "gbkernel.h"           // made by the build: the frame kernel
-#include "handoff.h"            // made by the build: the ROM that parks the console between firmwares
-#include "cvinput.h"            // player 1: the console's controller and USB pad 1
-#include "cvusb.h"              // the USB port: pads, keyboard and mouse
-#include "cvpsram.h"            // the 8 MB PSRAM
+#include "cbios_rom.h"          // made by tools/cbios.sh: C-BIOS's main and logo ROMs
+#include "cpu.h"
+#include "cvdiag.h"
+#include "cvframes.h"
+#include "cvinput.h"
+#include "cvpsram.h"
+#include "cvsd.h"
+#include "cvusb.h"
+#include "font8.h"
+#include "gbkernel.h"
+#include "handoff.h"
+#include "keymap.h"
+#include "mirror.h"
+#include "msx.h"
+#include "romtype.h"
+#include "sha1.h"
+#include "sound.h"
 
-#define NAME "MSX"
-#define BY   "Parrot Cart"
+#define BIOS_PATH   "/MSX/MSX.ROM"
+#define SAVE_QUIET  1000000     // SRAM unchanged this long (us): written to the .sav
+#define NOTE_US     1000000
 
-// ---- the screen: 24 rows of 28 characters -------------------------------------------------
-// Each thing shown has its row. say() fills a row; picture() shows the rows.
-// The font has capitals, digits and ! # & ' ( ) * + , - . / : ? (the rest
-// show as ?).
-enum {
-    ROW_TITLE = 1, ROW_BY = 2, ROW_STICK = 4, ROW_KEYPAD = 5, ROW_USB = 7, ROW_PAD = 9,
-    ROW_KEY = 16, ROW_TYPED = 17, ROW_MOUSE = 18, ROW_PSRAM = 20, ROW_RESET = 22,
-};
-#define ROWS 24
-#define COLS 28                 // (the TV cuts the edges: 2 characters each side are left off)
-static char text[ROWS][COLS + 1];
-// (this picture is in one color; these are the console's numbers for them)
-enum { C_BLACK = 1, C_LGREEN = 3, C_LRED = 9, C_LYELLOW = 11, C_GRAY = 14, C_WHITE = 15 };
+static mirror_t mirror;
+static sound_t snd;
+static uint8_t list[MIRROR_LIST_MAX];
+static size_t list_len;
+static bool list_out;           // made, not taken yet
+static uint32_t seen;           // the console's frame count the last list was made at
+static uint8_t bios[0xC000] __attribute__((aligned(4)));   // main ROM, then the logo ROM
+static uint8_t sram[0x2000] __attribute__((aligned(4)));
+static fs_t fs;
+static fs_file_t file;
+static char note[33];
+static char dir[256], rom_name[FS_LNAME];
 
-static void __attribute__((format(printf, 3, 4))) say(int row, uint8_t color, const char *fmt, ...) {
-    char s[64];
-    va_list ap;
-    va_start(ap, fmt);
-    vsnprintf(s, sizeof s, fmt, ap);
-    va_end(ap);
-    int i = 0;
-    for (; i < COLS && s[i]; i++) text[row][i] = s[i] >= 'a' && s[i] <= 'z' ? (char)(s[i] - 32) : s[i];   // the font is upper case
-    text[row][i] = 0;
-    (void)color;
+// ---- the console ----------------------------------------------------------------------
+// One pass of the loop's duties: RESET, the power, USB. Never more than a
+// few milliseconds apart (the console model fails a plugin that leaves it
+// 100 ms).
+static void duties(void) {
+    cvf_task(time_us_32());
+    cvusb_task();
 }
 
-static void leave_note(const char *s) {
-    cvf_note(s);                // the menu's bottom line when RESET takes the console back (32 characters at most)
+// true when a TV frame has started and the last list has been taken: time
+// for the next
+static bool new_frame(void) {
+    duties();
+    if (list_out && cvf_publish(list, list_len)) list_out = false;
+    if (list_out || cvf_frames() == seen) return false;
+    seen = cvf_frames();
+    return true;
 }
 
-// ---- player 1 ---------------------------------------------------------------------------
-static cvin_t in;
-static unsigned presses;
-
-static void player_step(void) {
-    cvin_update(&in);
-    const uint8_t pressed = cvin_pressed(&in);
-    const int key = cvin_key(&in);
-    // YOUR CODE: player 1. in.held (CVIN_UP, CVIN_FIRE_L ...) and in.key
-    // (0-9, CVIN_STAR, CVIN_HASH, -1) are what is down now; pressed and key
-    // what went down since the last step.
-    if (pressed || key >= 0) {
-        presses++;
-        static char note[33];
-        snprintf(note, sizeof note, "MSX: %u presses", presses);
-        leave_note(note);
-    }
-    const uint8_t h = in.held;
-    say(ROW_STICK, C_WHITE, "STICK %s%s%s%s FIRE %s%s", h & CVIN_UP ? "UP " : "", h & CVIN_DOWN ? "DOWN " : "",
-        h & CVIN_LEFT ? "LEFT " : "", h & CVIN_RIGHT ? "RIGHT " : "", h & CVIN_FIRE_L ? "L " : "", h & CVIN_FIRE_R ? "R" : "");
-    const char k = in.key < 0 ? '-' : in.key == CVIN_STAR ? '*' : in.key == CVIN_HASH ? '#' : (char)('0' + in.key);
-    say(ROW_KEYPAD, C_WHITE, "KEYPAD %c  PRESSES %u", k, presses);
+static void send(const uint8_t *psg, int n) {
+    list_len = mirror_frame(&mirror, &msx.vdp, psg, n, list);
+    list_out = !cvf_publish(list, list_len);
 }
 
-// ---- the USB port -----------------------------------------------------------------------
-static void usb_step(void) {
-    const cvusb_mode_t mode = cvusb_mode();
-    say(ROW_USB, mode == CVUSB_HOST || mode == CVUSB_DEVICE ? C_WHITE : C_LYELLOW, "USB %s", cvusb_mode_name(mode));
-}
-
-// ---- USB game pads ----------------------------------------------------------------------
-// Buttons by where they are: S the bottom face button (B on a Nintendo pad),
-// E the right one, W the left, N the top.
-static const char *const BUTTON[GP_BUTTONS] = {"UP", "DN", "LT", "RT", "S", "E", "W", "N", "L", "R",
-                                               "ZL", "ZR", "-", "+", "HOME", "CAP", "L3", "R3"};
-
-static void pads_step(void) {
-    for (int n = 0; n < CVUSB_PAD_MAX; n++) {
-        const int row = ROW_PAD + 3 * n;
-        const char *kind = cvusb_pad_kind(n);
-        gamepad_t p;
-        if (!cvusb_pad(n, &p)) {
-            say(row, C_GRAY, "PAD %d %s", n + 1, kind ? "STARTING" : "-");
-            say(row + 1, C_GRAY, "%s", "");
-            say(row + 2, C_GRAY, "%s", "");
-            continue;
+// ---- messages: text on the console before (or instead of) the MSX ---------------------
+// Graphics I and the font's 64 characters, 28 to a row (the TV cuts the edges)
+static void message(const char *l1, const char *l2, const char *l3) {
+    tms_t *t = &msx.vdp;
+    memset(t->vram, 0, sizeof t->vram);
+    for (int c = 32; c < 96; c++) memcpy(t->vram + c * 8, font8[c - 32], 8);
+    memset(t->vram + 0x2000, 0xF1, 32);                     // white on black
+    memset(t->vram + 0x1800, ' ', 768);
+    t->vram[0x1B00] = 0xD0;
+    const char *lines[3] = {l1, l2, l3};
+    for (int i = 0; i < 3; i++)
+        for (int k = 0; lines[i] && lines[i][k] && k < 28; k++) {
+            char ch = lines[i][k];
+            if (ch >= 'a' && ch <= 'z') ch = (char)(ch - 32);
+            t->vram[0x1800 + 32 * (10 + 2 * i) + 2 + k] = (uint8_t)(ch >= 32 && ch < 96 ? ch : '?');
         }
-        // YOUR CODE: pad n. p.buttons: the GP_* held (gamepad.h); p.lx, p.ly,
-        // p.rx, p.ry: the sticks, -2048..2047, y up. Pad 1 is player 1 too.
-        char b[64] = "";
-        size_t at = 0;
-        for (int i = 0; i < GP_BUTTONS; i++)
-            if (p.buttons & 1u << i) at += (size_t)snprintf(b + at, sizeof b - at, "%s ", BUTTON[i]);
-        say(row, C_WHITE, "PAD %d %s", n + 1, kind ? kind : "");
-        say(row + 1, C_WHITE, "  %s", at ? b : "-");
-        say(row + 2, C_WHITE, "  L%+5d%+5d R%+5d%+5d", p.lx, p.ly, p.rx, p.ry);
+    static const uint8_t R[8] = {0x00, 0xE0, 0x06, 0x80, 0x00, 0x36, 0x07, 0x01};
+    memcpy(t->reg, R, 8);
+    memset(t->dirty, 0xFF, sizeof t->dirty);
+}
+
+// the message on the TV for a while, or for good (us 0: RESET goes back to the menu)
+static void show_for(uint32_t us) {
+    const uint32_t t0 = time_us_32();
+    while (us == 0 || time_us_32() - t0 < us)
+        if (new_frame()) send(NULL, 0);
+}
+
+static void __attribute__((noreturn)) fail(const char *l1, const char *l2, const char *why) {
+    snprintf(note, sizeof note, "MSX: %.27s", why);
+    cvf_note(note);
+    message(l1, l2, "RESET: BACK TO THE MENU");
+    for (;;) show_for(0);
+}
+
+// ---- the card ---------------------------------------------------------------------------
+static const char *fs_why(int r) { return r == FS_ENOFILE ? "THE FILE ISN'T THERE" : "THE CARD DIDN'T READ"; }
+
+// the open file's first size bytes (at most max) into dst, the SHA-1 on the way
+static bool read_file(uint8_t *dst, uint32_t size, uint32_t max, sha1_t *h) {
+    static uint8_t sec[512] __attribute__((aligned(4)));
+    if (size > max) size = max;
+    for (uint32_t k = 0; k * 512 < size; k++) {
+        const uint32_t lba = fs_lba(&fs, k);
+        if (!lba || !cvsd_read(lba, sec)) return false;
+        const uint32_t n = size - k * 512 < 512 ? size - k * 512 : 512;
+        memcpy(dst + k * 512, sec, n);
+        if (h) sha1_add(h, sec, n);
+        if ((k & 7) == 7) duties();
+    }
+    return true;
+}
+
+// the player's own BIOS: /MSX/MSX.ROM, 32K; true if it's there and read
+static bool own_bios(void) {
+    fs_file_t f;
+    if (fs_find(&fs, BIOS_PATH, &f) != FS_OK || f.is_dir || f.size != 0x8000) return false;
+    if (fs_open(&fs, &f) != FS_OK) return false;
+    return read_file(bios, 0x8000, 0x8000, NULL);
+}
+
+// ---- the cartridge's SRAM: <name>.sav ---------------------------------------------------
+static uint16_t sav_nm[FS_LNAME];
+static int sav_n;               // 0: no .sav (no SRAM, or no name for one)
+static uint32_t sav_seen, sav_change_t, sav_writes, sav_fails;
+
+static void sram_start(int kb) {
+    sav_n = 0;
+    if (!kb) return;
+    uint16_t nm[FS_LNAME];
+    const int n = fs_name16(&fs, dir, file.first_clus, nm, FS_LNAME - 1);
+    if (n <= 0) return;
+    int stem = n;
+    for (int i = 0; i < n; i++)
+        if (nm[i] == '.') stem = i;
+    if (stem + 4 > FS_LNAME - 1) return;
+    memcpy(sav_nm, nm, (size_t)stem * 2);
+    static const char ext[] = ".sav";
+    for (int i = 0; i < 4; i++) sav_nm[stem + i] = (uint16_t)ext[i];
+    sav_n = stem + 4;
+    fs_file_t f;
+    bool made;
+    if (fs_create(&fs, dir, sav_nm, sav_n, 0, &f, &made) != FS_OK) return;   // none yet
+    if (f.size < 512 || fs_open(&fs, &f) != FS_OK) return;
+    static uint8_t tmp[0x2000];
+    if (read_file(tmp, (uint32_t)f.size, sizeof tmp, NULL)) memcpy(sram, tmp, f.size < sizeof tmp ? (size_t)f.size : sizeof tmp);
+}
+
+static bool sram_write(void) {
+    if (!sav_n) return true;
+    fs_file_t f;
+    bool made;
+    if (fs_create(&fs, dir, sav_nm, sav_n, sizeof sram, &f, &made) != FS_OK || f.size < sizeof sram ||
+        fs_open(&fs, &f) != FS_OK) {
+        sav_fails++;
+        return false;
+    }
+    for (uint32_t k = 0; k < sizeof sram / 512; k++)
+        if (fs_write_sec(&fs, k, sram + 512 * k)) {
+            sav_fails++;
+            return false;
+        }
+    sav_writes++;
+    return true;
+}
+
+// each frame: the .sav, once the SRAM has kept still a second
+static void sram_service(uint32_t now) {
+    if (!sav_n) return;
+    if (msx.sram_writes != sav_seen) {
+        sav_seen = msx.sram_writes;
+        sav_change_t = now | 1;
+    } else if (sav_change_t && now - sav_change_t > SAVE_QUIET) {
+        sav_change_t = 0;
+        sram_write();
     }
 }
 
-// ---- the keyboard -----------------------------------------------------------------------
-#define TYPED (COLS - 6)
-static char typed[TYPED + 1];
-static bool any_key;
-
-// Each key as it goes down and up: k->usage is its USB code (0x04 is A,
-// 0x28 Enter: HID's usage table), k->ascii its character on a US keyboard
-// (0 for none, as the arrows), k->mods the modifiers held (CVKEY_SHIFT,
-// CVKEY_CTRL, CVKEY_ALT, CVKEY_GUI).
-static void key_in(const cvkey_t *k) {
-    any_key = true;
-    say(ROW_KEY, C_WHITE, "KEY %02X %c %s %s%s%s%s", k->usage, k->ascii > 32 && k->ascii < 127 ? k->ascii : ' ',
-        k->down ? "DOWN" : "UP", k->mods & CVKEY_SHIFT ? "SHIFT " : "", k->mods & CVKEY_CTRL ? "CTRL " : "",
-        k->mods & CVKEY_ALT ? "ALT " : "", k->mods & CVKEY_GUI ? "GUI" : "");
-    // YOUR CODE: a key
-    if (!k->down) return;
-    size_t n = strlen(typed);
-    if (k->ascii == '\b') {
-        if (n) typed[n - 1] = 0;
-    } else if (k->ascii == '\r') {
-        typed[0] = 0;
-    } else if (k->ascii >= 32 && k->ascii < 127) {
-        if (n == TYPED) memmove(typed, typed + 1, n--);     // the oldest goes
-        typed[n] = k->ascii;
-        typed[n + 1] = 0;
-    }
-    say(ROW_TYPED, C_LGREEN, "TYPED %s", typed);
+static void going_back(void) {
+    if (!sav_change_t) return;
+    snprintf(note, sizeof note, sram_write() ? "MSX: saved" : "MSX: the .sav didn't write");
+    cvf_note(note);
 }
 
-static void keyboard_step(void) {
-    if (any_key) return;
+// ---- the controls -----------------------------------------------------------------------
+static cvin_t in;
+
+static uint8_t joy_bits(uint32_t up, uint32_t down, uint32_t left, uint32_t right, uint32_t a, uint32_t b) {
+    return (uint8_t)((up ? JOY_UP : 0) | (down ? JOY_DOWN : 0) | (left ? JOY_LEFT : 0) | (right ? JOY_RIGHT : 0) |
+                     (a ? JOY_A : 0) | (b ? JOY_B : 0));
+}
+
+static void controls(void) {
+    uint8_t joy, fire, key;
+    cvf_input(&joy, &fire, &key);
+    cvin_frame(&in, joy, fire, key);
+    cvin_update(&in);
+    const uint8_t h = in.held;
+    msx.joy[0] = joy_bits(h & CVIN_UP, h & CVIN_DOWN, h & CVIN_LEFT, h & CVIN_RIGHT, h & CVIN_FIRE_L, h & CVIN_FIRE_R);
+    gamepad_t p;
+    bool plus = false, minus = false;
+    if (cvusb_pad(0, &p)) {
+        plus = p.buttons & GP_PLUS;
+        minus = p.buttons & GP_MINUS;
+    }
+    keymap_pad(in.key, plus, minus);
+    msx.joy[1] = 0;
+    if (cvusb_pad(1, &p)) {
+        const uint32_t d = cvusb_pad_dirs(&p);
+        msx.joy[1] = joy_bits(d & GP_UP, d & GP_DOWN, d & GP_LEFT, d & GP_RIGHT, p.buttons & GP_SOUTH, p.buttons & GP_EAST);
+    }
+    cvmouse_t m;
+    msx.mouse_in = cvusb_mouse(&m);
+    if (msx.mouse_in) {
+        msx.mouse_dx += m.dx;
+        msx.mouse_dy += m.dy;
+        msx.mouse_buttons = (uint8_t)(m.buttons & 3);
+    }
     cvusb_status_t s;
     cvusb_status(&s);
-    say(ROW_KEY, C_GRAY, s.keyboards ? "KEYBOARD: TYPE SOMETHING" : "KEYBOARD -");
+    static bool kb;
+    if (kb && !s.keyboards) keymap_release();
+    kb = s.keyboards;
+    cvkey_t k;
+    while (cvusb_key(&k)) keymap_usb(k.usage, k.down);
 }
 
-// ---- the mouse --------------------------------------------------------------------------
-static int mouse_x = 128, mouse_y = 96, wheel;
+// ---- the note: what the menu shows after RESET ------------------------------------------
+static uint32_t frames_run, late, us_max;
 
-static void mouse_step(void) {
-    cvmouse_t m;
-    if (!cvusb_mouse(&m)) {
-        say(ROW_MOUSE, C_GRAY, "MOUSE -");
-        return;
-    }
-    // YOUR CODE: the mouse. m.dx and m.dy are how far it moved since the
-    // last call (y down), m.wheel the same, m.buttons what is held (1 left,
-    // 2 right, 4 middle).
-    mouse_x += (int)m.dx;
-    mouse_y += (int)m.dy;
-    mouse_x = mouse_x < 0 ? 0 : mouse_x > 255 ? 255 : mouse_x;
-    mouse_y = mouse_y < 0 ? 0 : mouse_y > 191 ? 191 : mouse_y;
-    wheel += (int)m.wheel;
-    say(ROW_MOUSE, C_WHITE, "MOUSE %d,%d %s%s%s WHEEL %d", mouse_x, mouse_y, m.buttons & 1 ? "L" : "-",
-        m.buttons & 4 ? "M" : "-", m.buttons & 2 ? "R" : "-", wheel);
-}
-
-// ---- the PSRAM --------------------------------------------------------------------------
-// 8 MB, the plugin's once cvpsram_init() says so: CVPSRAM_CACHED is a
-// uint8_t pointer to all of it (cvpsram.h). Here a word in each megabyte is
-// written and read back, once, at the start.
-static void psram_start(void) {
-    if (!cvpsram_init()) {
-        say(ROW_PSRAM, C_LRED, "PSRAM: NONE");
-        return;
-    }
-    volatile uint32_t *w = CVPSRAM_UNCACHED;
-    for (uint32_t mb = 0; mb < 8; mb++) w[mb << 18] = 0xC0DE0000u | mb;
-    int good = 0;
-    for (uint32_t mb = 0; mb < 8; mb++) good += w[mb << 18] == (0xC0DE0000u | mb);
-    say(ROW_PSRAM, good == 8 ? C_WHITE : C_LRED, "PSRAM: %d MB OF 8 RIGHT", good);
-    // YOUR CODE: CVPSRAM_CACHED[0] to [CVPSRAM_SIZE - 1] are yours
-}
-
-// ---- the step: every TV frame -----------------------------------------------------------
-static void step(void) {
-    player_step();
-    usb_step();
-    pads_step();
-    keyboard_step();
-    mouse_step();
-    // YOUR CODE: your plugin's step
-}
-
-// ---- the picture ------------------------------------------------------------------------
-// The frame kernel sets up Graphics II: 768 names at $1800 say which tile
-// is at each 8x8 place, and each third of the screen has its own 256 tiles:
-// patterns at $0000, colors at $2000, 8 bytes a tile. Here tiles 32-95 are
-// the font, in each third, and a place's name is its character.
-//
-// want[] is the video memory the plugin wants and shown[] what the console
-// will hold once the lists sent so far have run. Each frame's list carries
-// as many of the bytes that differ as fit in its time (examples/frames).
-#define NAMES    0x1800
-#define SPRITES  0x1B00         // (the sprites' tables, to $1FFF: not written)
-#define COLORS   0x2000
-#define VRAM_END 0x3800
-static uint8_t want[VRAM_END], shown[VRAM_END];
-
-static void picture_start(void) {
-    for (int third = 0; third < 3; third++)
-        for (int ch = 32; ch < 96; ch++)
-            for (int r = 0; r < 8; r++) {
-                const int i = third * 0x800 + ch * 8 + r;
-                want[i] = font8[ch - 32][r];
-                want[COLORS + i] = 0xF0 | C_BLACK;      // white on black
-                shown[i] = (uint8_t)~want[i];           // what the console has there isn't known: send it
-                shown[COLORS + i] = (uint8_t)~want[COLORS + i];
-            }
-    memset(shown + NAMES, 0xFF, 768);
-}
-
-// The whole picture, every frame
-static void picture(void) {
-    // YOUR CODE: your picture. This one is the rows of text.
-    for (int r = 0; r < ROWS; r++) {
-        const int n = (int)strlen(text[r]);
-        for (int col = 0; col < 32; col++) {
-            const int i = col - 2;                      // two places each side: the TV cuts the edges
-            const char ch = i >= 0 && i < n ? text[r][i] : ' ';
-            want[NAMES + 32 * r + col] = (uint8_t)(ch >= 32 && ch < 96 ? ch : '?');
-        }
-    }
-}
-
-// What each command costs in Z80 cycles (gbkernel.asm's header)
-#define FRAME_T     (262 * 228)
-#define BLANK_T     (70 * 228)
-#define BLANK_LIMIT (BLANK_T - 2000)    // the first part must end inside the blank...
-#define LIST_LIMIT  (FRAME_T - 4000)    // ...and the list well inside the frame
-#define RUN_T       106
-#define END_T       54
-static uint8_t list[CVF_LIST_MAX];
-static size_t len;
-static uint32_t cost, cursor;
-
-// The bytes of want[] that differ from shown[], as runs, until `limit`
-// cycles are used up at per_byte cycles a byte. Everything in a list must
-// be safe to run twice: with nothing new, the console runs the last again.
-static void diff(uint32_t limit, uint32_t per_byte) {
-    for (uint32_t scanned = 0; scanned < VRAM_END;) {
-        if (cursor == SPRITES) cursor = COLORS;
-        const uint32_t i = cursor, end = i < NAMES ? NAMES : i < SPRITES ? SPRITES : VRAM_END;
-        if (want[i] == shown[i]) {
-            cursor = (cursor + 1) % VRAM_END;
-            scanned++;
-            continue;
-        }
-        if (cost + RUN_T + per_byte > limit) return;
-        // a run from here: up to 255 bytes, to the table's end, while the
-        // time lasts, stopping at 4 bytes in a row that are right already
-        uint32_t n = 0, same = 0;
-        while (n < 255 && i + n < end && cost + RUN_T + per_byte * (n + 1) <= limit) {
-            same = want[i + n] == shown[i + n] ? same + 1 : 0;
-            if (same == 4) break;
-            n++;
-        }
-        n -= same == 4 ? 3 : same;                      // not the right ones at its end
-        list[len++] = 1;
-        list[len++] = (uint8_t)i;
-        list[len++] = (uint8_t)(i >> 8 | 0x40);
-        list[len++] = (uint8_t)n;
-        memcpy(list + len, want + i, n);
-        memcpy(shown + i, want + i, n);                 // it will be so, once this list has run
-        len += n;
-        cost += RUN_T + per_byte * n;
-        cursor = (i + n) % VRAM_END;
-        scanned += n;
-    }
+static void update_note(uint32_t now) {
+    static uint32_t t_last, frames_last, late_last;
+    if (now - t_last < NOTE_US) return;
+    snprintf(note, sizeof note, "MSX stuck: pc %04X", cpu_pc());
+    cvf_note(note);
+    cvf_note_now();             // (the return block has this one, should the watchdog reboot)
+    snprintf(note, sizeof note, "MSX %lu/s %lu late %lu.%lums%s", (unsigned long)(frames_run - frames_last),
+             (unsigned long)(late - late_last), (unsigned long)(us_max / 1000), (unsigned long)(us_max / 100 % 10),
+             sav_writes ? " saved" : "");
+    cvf_note(note);
+    t_last = now;
+    frames_last = frames_run;
+    late_last = late;
+    us_max = 0;
 }
 
 // ---- the start, and the loop ------------------------------------------------------------
-static void rows_start(void) {
-    say(ROW_TITLE, C_LYELLOW, "%s", NAME);
-    say(ROW_BY, C_GRAY, "BY %s", BY);
-    say(ROW_RESET, C_GRAY, "RESET: BACK TO THE MENU");
-}
-
 int main(void) {
-    // First thing: the console is parked, waiting for a cartridge to appear.
     static const cvf_config_t cfg = {gbkernel_bin, GBKERNEL_BIN_LEN, handoff_bin, HANDOFF_BIN_LEN};
     cvf_start(&cfg);
     cvd_start();
-    picture_start();
+    cvusb_start();
     cvin_init(&in);
-    leave_note(NAME);
-    rows_start();
-    psram_start();
-    cvusb_start();              // after the kernel's start: a host, for what is plugged into the hub
+    mirror_reset(&mirror);
+    sound_reset(&snd, false);
+    cvf_note("MSX");
 
-    // YOUR CODE: set up your plugin here
+    const cvl_t *b = cvf_launch();
+    const bool have_file = b && b->path[0];
+    if (have_file) {
+        snprintf(dir, sizeof dir, "%s", b->path);
+        char *slash = strrchr(dir, '/');
+        snprintf(rom_name, sizeof rom_name, "%s", slash ? slash + 1 : dir);
+        if (slash) *slash = 0;
+        else dir[0] = 0;
+    }
+    message("MSX", have_file ? "STARTING" : NULL, have_file ? rom_name : NULL);
+    show_for(200000);
+    if (!have_file) fail("OPEN AN .MX1 FILE", "FROM THE MENU", "no file opened");
+    if (!cvpsram_init()) fail("THE PSRAM DIDN'T ANSWER", NULL, "the PSRAM didn't answer");
 
-    bool pending = false;       // a list is made and not taken yet
-    uint32_t seen = 0;
+    // the cartridge, into the PSRAM, padded to a power of 2
+    const int r = cvsd_open_launched(&fs, b, true, &file);
+    if (r != FS_OK) fail(fs_why(r), NULL, "the file couldn't be read");
+    if (file.size < 0x2000 || file.size > CVPSRAM_SIZE / 2) fail("THAT ISN'T AN MSX ROM", "(8K TO 4 MB)", "not an MSX ROM");
+    const uint32_t real = (uint32_t)file.size;
+    uint32_t size = 0x2000;
+    while (size < real) size <<= 1;
+    uint8_t *rom = CVPSRAM_CACHED;
+    sha1_t h;
+    sha1_init(&h);
+    if (!read_file(rom, real, real, &h)) fail("THE CARD DIDN'T READ", NULL, "a card read failed");
+    memset(rom + real, 0xFF, size - real);
+    uint8_t sum[20];
+    sha1_done(&h, sum);
+    const romtype_t rt = romtype_find(rom_name, sum, rom, real);
+
+    // the BIOS: the player's own, or C-BIOS
+    const bool own = own_bios();
+    if (!own) memcpy(bios, cbios_main, sizeof cbios_main);
+    memcpy(bios + 0x8000, cbios_logo, sizeof cbios_logo);   // (the logo is C-BIOS's: only with it)
+    memset(sram, 0xFF, sizeof sram);
+    sram_start(rt.sram_kb);
+
+    msx_init(bios, 0x8000, own ? NULL : bios + 0x8000, 0x4000);
+    msx_cart(rom, size, real, rt.mapper, rt.sram_kb ? sram : NULL, rt.sram_kb);
+    msx_reset();
+    sound_reset(&snd, rt.mapper == MAP_KONAMI_SCC);
+    snprintf(note, sizeof note, "MSX %s %s%s", msx_mapper_name[rt.mapper], rt.why, own ? " OWN BIOS" : "");
+    cvf_note(note);
+    cvf_on_exit(going_back);
+
     for (;;) {
-        const uint32_t t = time_us_32();
-        // Every pass: is the console still on, has RESET been pressed? On
-        // RESET this doesn't return: the cart goes back to the menu.
-        cvf_task(t);
-        cvusb_task();           // every pass: the USB port's work (it never waits)
-        cvkey_t k;
-        while (cvusb_key(&k)) key_in(&k);
-        // Never drop a list: shown[] already counts on it. Offer it until it is taken.
-        if (pending && cvf_publish(list, len)) pending = false;
-        if (pending || cvf_frames() == seen) continue;
-        seen = cvf_frames();                            // a TV frame has started: make the list for the next
-        uint8_t joy, fire, key;
-        cvf_input(&joy, &fire, &key);                   // the controller, as the console read it this frame
-        cvin_frame(&in, joy, fire, key);
-        step();
-        picture();
-        len = 0;
-        cost = 480;                                     // the kernel's own start of a frame
-        diff(BLANK_LIMIT, 23);                          // the blank part: 23 cycles a byte
-        list[len++] = 0;
-        cost += END_T;
-        diff(LIST_LIMIT, 31);                           // while the picture is drawn: 31
-        list[len++] = 0;
-        pending = true;
+        const uint32_t before = seen;
+        if (!new_frame()) continue;
+        if (seen - before > 1 && frames_run) late += seen - before - 1;
+        const uint32_t t0 = time_us_32();
+        controls();
+        msx_frame();
+        uint8_t psg[16];
+        const int n = sound_frame(&snd, &msx, psg);
+        send(psg, n);
+        frames_run++;
+        const uint32_t now = time_us_32();
+        if (now - t0 > us_max) us_max = now - t0;
+        sram_service(now);
+        update_note(now);
     }
 }

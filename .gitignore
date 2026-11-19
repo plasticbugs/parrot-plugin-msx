@@ -4,3 +4,4 @@ build-*/
 __pycache__/
 .claude/settings.local.json
 CLAUDE.local.md
+src/cbios_rom.h
