@@ -12,10 +12,11 @@
 # landing in it as a file; a file opened with --open.
 #
 #   sim/test.sh                 everything
-#   sim/test.sh sound sd-card   just those
+#   sim/test.sh msx             just that
 #
-# The names: hello screen sound usb-gamepad usb-keyboard-mouse usb-midi-out
-# sd-card open-file frames psram lua vdp usb. Pictures and logs: build-sim/test/.
+# The names: msx (opened without a file) and msx-usb (test/carts/input.asm
+# from a card folder, with a keyboard, a pad and a mouse). Pictures and
+# logs: build-sim/test/.
 set -e
 # (on Windows, in Git Bash or MSYS2: C:/... paths throughout, and the shell
 # told not to turn the card's "/NOTES/..." into a path on this computer)
@@ -104,13 +105,21 @@ tree() {
 }
 
 # ---- the plugin in src/ (tools/new-plugin.py rewrites this part) ----
+# (C-BIOS for the Mac builds: src/cbios_rom.h, from vendor/cbios)
+[ -f "$kit/src/cbios_rom.h" ] || "$kit/tools/cbios.sh" "$kit/src/cbios_rom.h"
 if wanted msx; then
-    run msx "$kit/src" --ms 3000 --script "500:joy=up+fire 900:joy= 1200:key=5 1500:key= 2000:joy=fire2 2300:joy="
-    expect 'note "MSX: 3 presses"' 'back to the menu'
+    run msx "$kit/src" --ms 3000 --script "1500:joy=fire 1700:joy="
+    expect 'note "MSX: no file opened"' 'back to the menu'
 fi
 if wanted msx-usb; then
-    run msx-usb "$kit/src" --ms 4000 --script "2000:pad=south+l 2100:lstick=1500,-900 2200:rstick=-2048,2047 2400:pad=east+up 2600:keydown=0B 2650:keyup=0B 2700:mods=02 2750:keydown=1E 2800:keyup=1E 2850:mods=0 2900:keydown=0C 2950:keyup=0C 3000:keydown=2A 3050:keyup=2A 3100:mouse=40,20,1,1 3200:mouse=-10,5,0 3800:snap=usb"
-    expect 'usb: the port is a host' 'back to the menu'
+    # test/carts/input.asm from a card folder (named apart from test/run.sh's
+    # msx-usb, whose card is an image: the pictures are compared, not the logs)
+    t=$out/msx-card-folder; rm -rf "$t"; mkdir -p "$t/MSX"
+    (cd "$kit/test/carts" && sjasmplus --nologo --msg=err --raw="$t/MSX/INPUT.mx1" input.asm >/dev/null)
+    run msx-card "$kit/src" --card "$t" --open /MSX/INPUT.mx1 --ms 6000 \
+        --script "3500:keydown=04 3500:mods=02 3500:joy=up+fire 3600:pad=south+left 4000:snap=keys 4200:keyup=04 4200:mods=0 4200:joy= 4200:pad=off 4500:mouse=40,20,1 5000:mouse=-10,5,0 5500:snap=mouse"
+    expect 'usb: the port is a host' 'note "MSX PLAIN GUESS"' 'back to the menu'
+    same_as msx-usb picture
 fi
 # ---- the examples ----
 # (left out with examples/: tools/new-plugin.py --examples keeps them)

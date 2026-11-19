@@ -18,6 +18,7 @@
 #include <string.h>
 
 #include "cbios_rom.h"
+#include "cpu.h"
 #include "mirror.h"
 #include "msx.h"
 #include "romtype.h"
@@ -169,9 +170,9 @@ int main(int argc, char **argv) {
         if (!(con_reg[1] & 0x40) && (msx.vdp.reg[1] & 0x40)) held++;
 #ifndef M33
         if ((fr + 1) % 600 == 0)
-            printf("  frame %5d: %4u bytes, %5u T, backlog %5u, regs %02X %02X %02X %02X %02X %02X %02X %02X\n", fr + 1,
+            printf("  frame %5d: %4u bytes, %5u T, backlog %5u, regs %02X %02X %02X %02X %02X %02X %02X %02X, pc %04X\n", fr + 1,
                    mirror.bytes, mirror.cost, mirror.backlog, con_reg[0], con_reg[1], con_reg[2], con_reg[3], con_reg[4],
-                   con_reg[5], con_reg[6], con_reg[7]);
+                   con_reg[5], con_reg[6], con_reg[7], cpu_pc());
 #endif
     }
     uint32_t s = 0;

@@ -28,5 +28,7 @@
 #ifndef LSB_FIRST
 #define LSB_FIRST 1             // the register pairs, little-endian (as SMS Plus builds it)
 #endif
+#ifndef Z80_M1_WAIT
 #define Z80_M1_WAIT 1           // as an MSX: one wait state each M1 cycle
+#endif
 #include "../vendor/z80/z80.c"

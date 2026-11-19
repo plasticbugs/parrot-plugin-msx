@@ -21,8 +21,14 @@
  *   - This entire notice must remain in the source code.
  *
  *	 This file has been changed for Parrot Cart's MSX plugin (2026):
- *	  - Z80_M1_WAIT: T-states added to each opcode fetch (the EXEC and
- *		EXEC_INLINE macros, marked "Parrot Cart"); 0 unless defined.
+ *	  - Z80_M1_WAIT: T-states added to each opcode fetch: in the EXEC
+ *		and EXEC_INLINE macros, the block instructions' repeats,
+ *		BURNODD and z80_burn, each marked "Parrot Cart". 0 unless
+ *		defined.
+ *	  - The block instructions' repeats (REPEAT_AT_ONCE) loop until they
+ *		break out themselves: a pass charged as the time ran out was
+ *		charged again when the instruction went on (marked "Parrot
+ *		Cart").
  *
  *	 Changes in 2.7:
  *	  - removed z80_vm specific code, it's not needed (and never was).
@@ -443,10 +449,28 @@ PROTOTYPES(Z80xxcb, xxcb);
 /* Burn an odd amount of cycles, that is instructions taking something      */
 /* different from 4 T-states per opcode (and R increment)                   */
 /****************************************************************************/
+/* Parrot Cart: Z80_M1_WAIT more T-states for each opcode fetch (an M1
+ * cycle): the MSX adds a wait state to every one. 0 if not defined. The
+ * block instructions' repeats and the loop hacks' burns count them too
+ * (Parrot Cart: marked there). The fourth byte of DD CB d op and FD CB d op isn't an M1 fetch. */
+#ifndef Z80_M1_WAIT
+#define Z80_M1_WAIT 0
+#endif
+#define M1_op Z80_M1_WAIT
+#define M1_cb Z80_M1_WAIT
+#define M1_dd Z80_M1_WAIT
+#define M1_fd Z80_M1_WAIT
+#define M1_ed Z80_M1_WAIT
+#define M1_xxcb 0
+
 static __inline__ void BURNODD(int cycles, int opcodes, int cyclesum) {
     if (cycles > 0) {
-        _R += (cycles / cyclesum) * opcodes;
-        z80_ICount -= (cycles / cyclesum) * cyclesum;
+        /* Parrot Cart: each opcode an M1 wait more. A call for one pass of
+           a loop (cycles == cyclesum) burns that pass, waits and all. */
+        const int sum = cyclesum + opcodes * Z80_M1_WAIT;
+        const int n = cycles == cyclesum ? 1 : cycles / sum;
+        _R += n * opcodes;
+        z80_ICount -= n * sum;
     }
 }
 
@@ -463,18 +487,6 @@ static __inline__ void BURNODD(int cycles, int opcodes, int cyclesum) {
 /***************************************************************
  * execute an opcode
  ***************************************************************/
-/* Parrot Cart: Z80_M1_WAIT more T-states for each opcode fetch (an M1
- * cycle): the MSX adds a wait state to every one. 0 if not defined. The
- * fourth byte of DD CB d op and FD CB d op isn't an M1 fetch. */
-#ifndef Z80_M1_WAIT
-#define Z80_M1_WAIT 0
-#endif
-#define M1_op Z80_M1_WAIT
-#define M1_cb Z80_M1_WAIT
-#define M1_dd Z80_M1_WAIT
-#define M1_fd Z80_M1_WAIT
-#define M1_ed Z80_M1_WAIT
-#define M1_xxcb 0
 #define EXEC(prefix, opcode)                                    \
 {                                                                \
     unsigned op = opcode;                                        \
@@ -1825,7 +1837,7 @@ static __inline__ UINT8 SET(UINT8 bit, UINT8 value) {
             if( z80_ICount > 0 )                                \
             {                                                    \
                 _R += 2;  /* increment R twice */                \
-                CY(21);                                        \
+                CY(21 + 2 * Z80_M1_WAIT);  /* Parrot Cart: two M1 */                                        \
             }                                                    \
             else break;                                        \
         }                                                        \
@@ -1835,7 +1847,8 @@ static __inline__ UINT8 SET(UINT8 bit, UINT8 value) {
             z80_ICount += 5;                                    \
             break;                                              \
         }                                                        \
-    } while( z80_ICount > 0 );                                    \
+    } while( 1 );  /* Parrot Cart: was z80_ICount > 0, which    \
+                      left a pass charged but not run */         \
 }
 #else
 #define LDIR LDI; if( _BC ) { _PC -= 2; CY(5); }
@@ -1856,7 +1869,7 @@ static __inline__ UINT8 SET(UINT8 bit, UINT8 value) {
             if( z80_ICount > 0 )                                \
             {                                                   \
                 _R += 2;  /* increment R twice */                \
-                CY(21);                                        \
+                CY(21 + 2 * Z80_M1_WAIT);  /* Parrot Cart: two M1 */                                        \
             }                                                    \
             else break;                                         \
         }                                                       \
@@ -1866,7 +1879,8 @@ static __inline__ UINT8 SET(UINT8 bit, UINT8 value) {
             z80_ICount += 5;                                    \
             break;                                              \
         }                                                        \
-    } while( z80_ICount > 0 );                                    \
+    } while( 1 );  /* Parrot Cart: was z80_ICount > 0, which    \
+                      left a pass charged but not run */         \
 }
 #else
 #define CPIR CPI; if( _BC && !(_F & ZF) ) { _PC -= 2; CY(5); }
@@ -1887,7 +1901,7 @@ static __inline__ UINT8 SET(UINT8 bit, UINT8 value) {
             if( z80_ICount > 0 )                                \
             {                                                   \
                 _R += 2;  /* increment R twice */                \
-                CY(21);                                        \
+                CY(21 + 2 * Z80_M1_WAIT);  /* Parrot Cart: two M1 */                                        \
             }                                                    \
             else break;                                         \
         }                                                       \
@@ -1897,7 +1911,8 @@ static __inline__ UINT8 SET(UINT8 bit, UINT8 value) {
             z80_ICount += 5;                                    \
             break;                                              \
         }                                                        \
-    } while( z80_ICount > 0 );                                    \
+    } while( 1 );  /* Parrot Cart: was z80_ICount > 0, which    \
+                      left a pass charged but not run */         \
 }
 #else
 #define INIR INI; if( _B ) { _PC -= 2; CY(5); }
@@ -1918,7 +1933,7 @@ static __inline__ UINT8 SET(UINT8 bit, UINT8 value) {
             if( z80_ICount > 0 )                                \
             {                                                   \
                 _R += 2;  /* increment R twice */                \
-                CY(21);                                        \
+                CY(21 + 2 * Z80_M1_WAIT);  /* Parrot Cart: two M1 */                                        \
             }                                                    \
             else break;                                         \
         }                                                       \
@@ -1928,7 +1943,8 @@ static __inline__ UINT8 SET(UINT8 bit, UINT8 value) {
             z80_ICount += 5;                                    \
             break;                                              \
         }                                                        \
-    } while( z80_ICount > 0 );                                    \
+    } while( 1 );  /* Parrot Cart: was z80_ICount > 0, which    \
+                      left a pass charged but not run */         \
 }
 #else
 #define OTIR OUTI; if( _B ) { _PC -= 2; CY(5); }
@@ -1949,7 +1965,7 @@ static __inline__ UINT8 SET(UINT8 bit, UINT8 value) {
             if( z80_ICount > 0 )                                \
             {                                                   \
                 _R += 2;  /* increment R twice */                \
-                CY(21);                                        \
+                CY(21 + 2 * Z80_M1_WAIT);  /* Parrot Cart: two M1 */                                        \
             }                                                    \
             else break;                                         \
         }                                                       \
@@ -1959,7 +1975,8 @@ static __inline__ UINT8 SET(UINT8 bit, UINT8 value) {
             z80_ICount += 5;                                    \
             break;                                              \
         }                                                        \
-    } while( z80_ICount > 0 );                                    \
+    } while( 1 );  /* Parrot Cart: was z80_ICount > 0, which    \
+                      left a pass charged but not run */         \
 }
 #else
 #define LDDR LDD; if( _BC ) { _PC -= 2; CY(5); }
@@ -1980,7 +1997,7 @@ static __inline__ UINT8 SET(UINT8 bit, UINT8 value) {
             if( z80_ICount > 0 )                                \
             {                                                   \
                 _R += 2;  /* increment R twice */                \
-                CY(21);                                        \
+                CY(21 + 2 * Z80_M1_WAIT);  /* Parrot Cart: two M1 */                                        \
             }                                                    \
             else break;                                         \
         }                                                       \
@@ -1990,7 +2007,8 @@ static __inline__ UINT8 SET(UINT8 bit, UINT8 value) {
             z80_ICount += 5;                                    \
             break;                                              \
         }                                                        \
-    } while( z80_ICount > 0 );                                    \
+    } while( 1 );  /* Parrot Cart: was z80_ICount > 0, which    \
+                      left a pass charged but not run */         \
 }
 #else
 #define CPDR CPD; if( _BC && !(_F & ZF) ) { _PC -= 2; CY(5); }
@@ -2011,7 +2029,7 @@ static __inline__ UINT8 SET(UINT8 bit, UINT8 value) {
             if( z80_ICount > 0 )                                \
             {                                                   \
                 _R += 2;  /* increment R twice */                \
-                CY(21);                                        \
+                CY(21 + 2 * Z80_M1_WAIT);  /* Parrot Cart: two M1 */                                        \
             }                                                    \
             else break;                                         \
         }                                                       \
@@ -2021,7 +2039,8 @@ static __inline__ UINT8 SET(UINT8 bit, UINT8 value) {
             z80_ICount += 5;                                    \
             break;                                              \
         }                                                        \
-    } while( z80_ICount > 0 );                                    \
+    } while( 1 );  /* Parrot Cart: was z80_ICount > 0, which    \
+                      left a pass charged but not run */         \
 }
 #else
 #define INDR IND; if( _B ) { _PC -= 2; CY(5); }
@@ -2042,7 +2061,7 @@ static __inline__ UINT8 SET(UINT8 bit, UINT8 value) {
             if( z80_ICount > 0 )                                \
             {                                                   \
                 _R += 2;  /* increment R twice */                \
-                CY(21);                                        \
+                CY(21 + 2 * Z80_M1_WAIT);  /* Parrot Cart: two M1 */                                        \
             }                                                    \
             else break;                                         \
         }                                                       \
@@ -2052,7 +2071,8 @@ static __inline__ UINT8 SET(UINT8 bit, UINT8 value) {
             z80_ICount += 5;                                    \
             break;                                              \
         }                                                        \
-    } while( z80_ICount > 0 );                                    \
+    } while( 1 );  /* Parrot Cart: was z80_ICount > 0, which    \
+                      left a pass charged but not run */         \
 }
 #else
 #define OTDR OUTD; if( _B ) { _PC -= 2; CY(5); }
@@ -4945,10 +4965,11 @@ int in_ram(z80_execute)(int cycles) {
  ****************************************************************************/
 void in_ram(z80_burn)(int cycles) {
     if (cycles > 0) {
-        /* NOP takes 4 cycles per instruction */
-        int n = (cycles + 3) / 4;
+        /* NOP takes 4 cycles per instruction (Parrot Cart: and an M1 wait) */
+        const int t = 4 + Z80_M1_WAIT;
+        int n = (cycles + t - 1) / t;
         _R += n;
-        z80_ICount -= 4 * n;
+        z80_ICount -= t * n;
     }
 }
 

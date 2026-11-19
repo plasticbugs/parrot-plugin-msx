@@ -4,7 +4,8 @@
 #   1. video, the four mappers and input run in the MSX and the mirror
 #      (test/stats); the console's picture at set times must be headless
 #      openMSX's (machine C-BIOS_MSX1), pixel for pixel, and the mapper
-#      guess must be right
+#      guess must be right; timing's counts must be openMSX's, give or
+#      take one
 #   2. sound, the Konami SCC cart and input run in the console model
 #      (test/host), the plugin as it is; the SN76489 bytes it sends are
 #      checked, and input's pictures (keys, stick, mouse) are kept to look at
@@ -28,6 +29,7 @@ cd "$c"
 sjasmplus --nologo --msg=war --raw="$out/video.rom" video.asm >/dev/null
 sjasmplus --nologo --msg=war --raw="$out/sound.rom" sound.asm >/dev/null
 sjasmplus --nologo --msg=war --raw="$out/input.rom" input.asm >/dev/null
+sjasmplus --nologo --msg=war --raw="$out/timing.rom" timing.asm >/dev/null
 for m in 1 2 3 4; do sjasmplus --nologo --msg=war -DMAPPER=$m --raw="$out/map$m.rom" mapper.asm >/dev/null; done
 cd "$here"
 "$here/test/stats/build.sh" "$out/stats"
@@ -70,6 +72,12 @@ for m in 1 2 3 4; do
     grep -q "$want (GUESS)" "$out/map$m/6/stats.txt" && echo "  map$m: guessed $want" || fail "map$m: guessed $(sed -n 1p "$out/map$m/6/stats.txt")"
 done
 compare input "$out/input.rom" "4.5" "" "4 2 64 down 4 6 1 down 4 8 1 down"
+# timing.asm's counts: to a pass of its loop, give or take one (counts.py)
+s0=$status; compare timing "$out/timing.rom" "5" >/dev/null 2>&1; status=$s0   # (its picture may be a pass apart)
+if [ -s "$out/timing/om_5.vram" ]; then
+    echo "  timing (passes left in a frame: the MSX, openMSX):"
+    python3 -I "$c/counts.py" "$out/timing/5/console.vram" "$out/timing/om_5.vram" || fail "timing: not openMSX's"
+fi
 
 echo "2. in the console model"
 "$here/test/host/build.sh" "$here/src" "$out/run" 2>"$out/build.log" || { cat "$out/build.log"; exit 1; }

@@ -16,7 +16,8 @@
 # Output in $TMPDIR/parrotcart-test (pictures: */screen.png).
 # NO_MAME=1 skips step 2; MAME_ROMPATH=dir is where coleco.zip is.
 # What this can't check is the cart itself: USB, the real card, the PSRAM
-# chip, timing on the bus. docs/testing.md has the console test plan.
+# chip, timing on the bus. docs/design.md has the console checklist.
+# test/carts/run.sh and test/games/run.sh test the MSX itself.
 set -e
 kit=$(cd "$(dirname "$0")/.." && pwd)
 out=${TMPDIR:-/tmp}/parrotcart-test
