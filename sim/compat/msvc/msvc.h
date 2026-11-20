@@ -3,6 +3,8 @@
 // none, and none of those the SDK uses changes a struct's layout.
 #pragma once
 #define __attribute__(x)
+// GCC's spelling of inline, which the vendored Z80 core (vendor/z80) uses
+#define __inline__ __inline
 #ifndef _CRT_SECURE_NO_WARNINGS
 #define _CRT_SECURE_NO_WARNINGS
 #endif
