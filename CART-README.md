@@ -44,7 +44,7 @@ The few cartridges with a battery save next to the game, with the same name, so 
 
 ## Notes
 
-- Most games are found to be the right type of cartridge on their own. If one isn't, put the type in its name, in brackets: `[ASCII8]`, `[ASCII16]`, `[KONAMI]`, `[KONAMISCC]` or `[RTYPE]`, like `Game [ASCII16].mx1`.
+- The plugin works out the cartridge type of most games by itself. If it gets one wrong, put the type in the file's name, in brackets: `[ASCII8]`, `[ASCII16]`, `[KONAMI]`, `[KONAMISCC]` or `[RTYPE]`, like `Game [ASCII16].mx1`.
 - After RESET, the menu's note shows the cartridge type, then the frames each second.
 - MSX2 games, disks, tapes, BASIC and MSX-MUSIC aren't supported.
 - Games that play samples through the sound chip play without them.

@@ -44,7 +44,7 @@ The few cartridges with a battery save next to the game, with the same name, so 
 
 ## Notes
 
-- Most games are found to be the right type of cartridge on their own. If one isn't, put the type in its name, in brackets: `[ASCII8]`, `[ASCII16]`, `[KONAMI]`, `[KONAMISCC]` or `[RTYPE]`, like `Game [ASCII16].mx1`.
+- The plugin works out the cartridge type of most games by itself. If it gets one wrong, put the type in the file's name, in brackets: `[ASCII8]`, `[ASCII16]`, `[KONAMI]`, `[KONAMISCC]` or `[RTYPE]`, like `Game [ASCII16].mx1`.
 - After RESET, the menu's note shows the cartridge type, then the frames each second.
 - MSX2 games, disks, tapes, BASIC and MSX-MUSIC aren't supported.
 - Games that play samples through the sound chip play without them.
@@ -95,10 +95,9 @@ the start of this README.
 
 ## How it works, and the tests
 
-`docs/design.md` explains how the plugin works: the Z80 core and why it
-was picked, the mappers, how the MSX's video memory is copied to the
-console, the sound, the controls, what was measured, and what still
-needs checking on a console.
+`docs/design.md` explains how the plugin works and why the Z80 core was
+picked. It also has what was measured, and what still needs checking on
+a console.
 
 The tests run on a Mac or Linux. Most need sjasmplus, and some need
 openMSX and MAME. They open no windows.
@@ -111,7 +110,7 @@ sim/test.sh                  # the same in the simulator
 ```
 
 No ROM or BIOS image is in this repository. The test carts in
-`test/carts` and C-BIOS are built from source.
+`test/carts` and C-BIOS are built from their source.
 
 ## License
 

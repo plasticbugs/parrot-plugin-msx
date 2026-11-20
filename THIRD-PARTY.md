@@ -1,13 +1,16 @@
 # What in this repository came from elsewhere
 
-The plugin's own code is in `src/`, `test/carts/`, `test/stats/`,
-`test/games/` and `tools/cbios.sh` and `tools/romlist.py`. As a whole the
-plugin is under the GNU GPL, version 3 (`LICENSE`), because its Z80 core
-came from a GPL-3.0 project. The plugin template it started from (the
-build files, `lib/`, `test/host/`, `test/run.sh`, `sim/`, `tools/` and
-`docs/`, except `docs/design.md`) and the copy of the cart's SDK in
-`sdk/` are by the Parrot Cart contributors, under the MIT license below.
-These parts came from other projects and keep their own terms:
+As a whole, the plugin is under the GNU GPL, version 3 (`LICENSE`),
+because its Z80 core came from a GPL-3.0 project. Its own code is
+`src/`, `docs/design.md`, `test/carts/`, `test/games/`, `test/stats/`,
+`tools/cbios.sh`, `tools/romlist.py` and `vendor/z80/shared.h` (which
+stands in for SMS Plus's header of the same name).
+
+The rest of the plugin template it started from (the build files,
+`lib/`, `sim/`, the other files in `docs/`, `test/` and `tools/`) and the
+copy of the cart's SDK in `sdk/` are by the Parrot Cart contributors,
+under the MIT license below. These parts came from other projects and
+keep their own terms:
 
 | Where | What | License |
 |---|---|---|
@@ -22,20 +25,22 @@ These parts came from other projects and keep their own terms:
 
 ## What each license asks
 
-- **The Z80.** Juergen Buchmueller must be in the credits (the README
-  does that). A changed file must say so (`z80.c` does, under his
-  notice, and marks each change), and the notice must stay. It's for
-  non-commercial use: the plugin is free, a separate download, never
-  sold or bundled with the cart. Commercial use would need his
-  permission. The GPL-3.0 doesn't allow extra restrictions like that
-  one; the SMS plugin's Z80 is in the same position. If the plugin were
-  ever sold, the Z80 would have to be replaced by one under a plain
-  license, or he would have to be asked.
-- **C-BIOS.** A binary that contains it must carry its copyright notice,
-  conditions and disclaimer in its documentation. The README, which the
-  .CVP carries and the cart shows, has them in full.
-- **GPL-3.0.** Whoever gets the plugin is owed its full source, which is
-  this repository. A link to it goes beside each download.
+Juergen Buchmueller's Z80 must credit him, and the README does. A
+changed file must say so, and `z80.c` does, under his notice, which
+stays as it is. Each change is marked. The notice allows non-commercial
+use: the plugin is free, a separate download, and never sold or bundled
+with the cart. Commercial use would need his permission. The GPL-3.0
+doesn't allow extra restrictions like that one, and the SMS plugin's
+Z80 is in the same position. If the plugin were ever sold, the Z80
+would have to be replaced by one under a plain license, or he would
+have to be asked.
+
+C-BIOS's license asks that a binary containing it carries its copyright
+notice, conditions and disclaimer in its documentation. The README has
+them in full, and the .CVP carries the README, which the cart shows.
+
+Under the GPL-3.0, whoever gets the plugin is owed its full source, which
+is this repository. A link to it goes beside each download.
 
 The built plugin also contains the Raspberry Pi Pico SDK's runtime (BSD
 3-Clause) and TinyUSB (MIT).
