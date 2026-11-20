@@ -20,6 +20,12 @@ features=$(cmake -DPLUGIN_DIR="$dir" -P "$kit/test/host/plugin.cmake")
 [ -z "$features" ] || features=" $features"
 flags="-std=c11 -O1 -g -fsanitize=address,undefined -Wall -Wextra -Wno-missing-field-initializers
   -I$kit/test/host/include -I$dir -I$kit/lib -I$sdk/sdk -I$sdk/midihello$features"
+# GCC (the Linux runners) also warns about the vendored Z80 core's old
+# declaration style and about notes that snprintf shortens on purpose.
+# Clang has neither warning.
+if cc --version 2>/dev/null | grep -q 'Free Software Foundation'; then
+    flags="$flags -Wno-old-style-declaration -Wno-format-truncation"
+fi
 n=0
 for c in "$dir"/*.c; do
     grep -q '#include "tusb.h"' "$c" && continue

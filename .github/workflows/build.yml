@@ -36,16 +36,10 @@ jobs:
 
       - name: Run them on the console's model
         run: |
-          # (the card examples need macOS's hdiutil, and MAME a BIOS: not here)
+          # (MAME needs a BIOS: not here. The card image is made with
+          # dosfstools and mtools, as macOS makes it with hdiutil.)
+          sudo apt-get install -y -q dosfstools mtools
           NO_MAME=1 test/run.sh msx msx-usb
-
-      - name: The Lua plugin, and scripts on the console's model
-        run: |
-          cmake -S lua -B build-lua -G Ninja -DPICO_SDK_PATH="$HOME/pico-sdk"
-          ninja -C build-lua
-          python3 tools/ci/cvpinfo.py build-lua/LUA.CVP
-          # (the card tests need macOS's hdiutil: the simulator job runs them from a folder)
-          NO_MAME=1 lua/test/run.sh
 
       - name: Screenshots
         run: |
@@ -74,9 +68,12 @@ jobs:
         run: |
           case "$RUNNER_OS" in
             macOS) brew install sdl3 ninja ;;
-            Linux) sudo apt-get update -q && sudo apt-get install -y -q ninja-build zlib1g-dev libasound2-dev && sim/get-sdl.sh ;;
+            Linux) sudo apt-get update -q && sudo apt-get install -y -q ninja-build zlib1g-dev libasound2-dev dosfstools mtools && sim/get-sdl.sh ;;
             Windows) sim/get-sdl.sh ;;
           esac
+
+      - name: sjasmplus (for C-BIOS and the test carts)
+        run: tools/ci/sjasmplus.sh
 
       - name: The models alone, for the simulator's pictures to match
         if: runner.os != 'Windows'

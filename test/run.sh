@@ -120,7 +120,13 @@ if wanted msx-usb; then
     # test/carts/input.asm from the card: a USB keyboard, the controller, a pad, a mouse
     t=$out/msx-tree; rm -rf "$t" "$out/card-msx.cdr"; mkdir -p "$t/MSX"
     (cd "$kit/test/carts" && sjasmplus --nologo --msg=err --raw="$t/MSX/INPUT.mx1" input.asm >/dev/null)
-    hdiutil create -quiet -srcfolder "$t" -fs MS-DOS -layout NONE -size 64m -format UDTO -o "$out/card-msx"
+    if command -v hdiutil >/dev/null; then
+        hdiutil create -quiet -srcfolder "$t" -fs MS-DOS -layout NONE -size 64m -format UDTO -o "$out/card-msx"
+    else
+        # (Linux: the same FAT16 card, from dosfstools and mtools)
+        truncate -s 64M "$out/card-msx.cdr" && mkfs.fat -F 16 "$out/card-msx.cdr" >/dev/null &&
+            MTOOLS_SKIP_CHECK=1 mcopy -s -i "$out/card-msx.cdr" "$t/MSX" ::/
+    fi
     PC_CARD=$out/card-msx.cdr PC_OPEN=/MSX/INPUT.mx1 PC_END=6000 \
     PC_SCRIPT="3500:keydown=04 3500:mods=02 3500:joy=up+fire 3600:pad=south+left 4000:snap=keys 4200:keyup=04 4200:mods=0 4200:joy= 4200:pad=off 4500:mouse=40,20,1 5000:mouse=-10,5,0 5500:snap=mouse" \
         run msx-usb "$kit/src" 'usb: the port is a host' 'note "MSX PLAIN GUESS"' 'back to the menu'
