@@ -5,7 +5,7 @@
 # checked). CMake runs this; test/run.sh and tools/sim.sh run it for src/.
 set -e
 here=$(cd "$(dirname "$0")/.." && pwd)
-case $1 in /*) out=$1 ;; *) out=$PWD/$1 ;; esac
+case $1 in /*|[A-Za-z]:*) out=$1 ;; *) out=$PWD/$1 ;; esac   # (D:/... is CMake's on Windows)
 tmp=${TMPDIR:-/tmp}/msx-cbios.$$
 rm -rf "$tmp"
 mkdir -p "$tmp"
