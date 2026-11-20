@@ -8,8 +8,8 @@
 // the console's SN76489 (sound.c).
 //
 //   the BIOS       C-BIOS (built in), or the player's own MSX1 BIOS in
-//                  /MSX/MSX.ROM (32K)
-//   the cartridge  the file the menu opened (.mx1, .mx2: an MSX ROM), in
+//                  /MSX/MSXBIOS.BIN (32K; not .rom, or the menu would list it)
+//   the cartridge  the file the menu opened (.rom, .mx1, .mx2: an MSX ROM), in
 //                  the PSRAM; its mapper from romtype.c
 //   its SRAM       the few cartridges with a battery: <name>.sav beside it
 //   the controls   the console's controller (or USB pad 1) is joystick 1,
@@ -38,7 +38,7 @@
 #include "sha1.h"
 #include "sound.h"
 
-#define BIOS_PATH   "/MSX/MSX.ROM"
+#define BIOS_PATH   "/MSX/MSXBIOS.BIN"
 #define SAVE_QUIET  1000000     // SRAM unchanged this long (us): written to the .sav
 #define NOTE_US     1000000
 
@@ -132,7 +132,7 @@ static bool read_file(uint8_t *dst, uint32_t size, uint32_t max, sha1_t *h) {
     return true;
 }
 
-// the player's own BIOS: /MSX/MSX.ROM, 32K, into the PSRAM; true if it's there and read
+// the player's own BIOS: /MSX/MSXBIOS.BIN, 32K, into the PSRAM; true if it's there and read
 static bool own_bios(void) {
     fs_file_t f;
     if (fs_find(&fs, BIOS_PATH, &f) != FS_OK || f.is_dir || f.size != 0x8000) return false;
@@ -286,7 +286,7 @@ int main(void) {
     }
     message("MSX", have_file ? "STARTING" : NULL, have_file ? rom_name : NULL);
     show_for(200000);
-    if (!have_file) fail("OPEN AN .MX1 FILE", "FROM THE MENU", "no file opened");
+    if (!have_file) fail("OPEN AN MSX ROM", "FROM THE MENU", "no file opened");
     if (!cvpsram_init()) fail("THE PSRAM DIDN'T ANSWER", NULL, "the PSRAM didn't answer");
 
     // the cartridge, into the PSRAM, padded to a power of 2

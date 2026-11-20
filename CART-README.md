@@ -4,9 +4,9 @@ This plugin plays MSX1 cartridge games on the ColecoVision.
 
 ## Setup
 
-Copy `MSX.CVP` into the `/PLUGINS` folder on the card. Put your MSX cartridge ROMs in `/MSX`, or anywhere else on the card, named `.mx1`. A `.rom` file only needs renaming. Pick one in the menu to play it.
+Copy `MSX.CVP` into the `/PLUGINS` folder on the card. Put your MSX cartridge ROMs in `/MSX`, or anywhere else on the card, and pick one in the menu to play it. They can keep their `.rom` names: the menu tells an MSX `.rom` from a ColecoVision one by its first bytes. That needs the cart's menu from 2026-11-19 or later. With an older menu, rename them `.mx1`.
 
-The plugin has its own BIOS, C-BIOS, built in. To use a real MSX1 BIOS instead, put the 32K file at `/MSX/MSX.ROM`.
+The plugin has its own BIOS, C-BIOS, built in. To use a real MSX1 BIOS instead, put the 32K file at `/MSX/MSXBIOS.BIN`.
 
 A USB pad, keyboard or mouse needs a powered hub on the cart's USB port, because the cart can't power them.
 

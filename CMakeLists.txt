@@ -1,5 +1,5 @@
-# MSX: MSX1 cartridge games on the ColecoVision. Pick a .mx1 or .mx2 file (an
-# MSX cartridge ROM) in the menu: the cart runs an MSX1 with C-BIOS and
+# MSX: MSX1 cartridge games on the ColecoVision. Pick an MSX cartridge ROM (.rom,
+# .mx1 or .mx2) in the menu: the cart runs an MSX1 with C-BIOS and
 # mirrors its video chip to the console's. RESET goes back to the menu.
 #
 #   cmake -B build -G Ninja -DPICO_SDK_PATH=$HOME/pico-sdk
@@ -49,4 +49,4 @@ cvcart_features(msx PADS KEYBOARD MOUSE PSRAM CARD)
 # without its v. The cart shows CART-README.md (the start of README.md).
 cvcart_plugin(msx ID parrotcart.msx NAME "MSX" VERSION 0.1.0 BY "Parrot Cart"
               ICON src/icon.txt README CART-README.md FILE MSX.CVP
-              HOME /MSX OPENS .mx1 .mx2 FILE_ICON src/file_icon.txt)
+              HOME /MSX OPENS .rom .mx1 .mx2 FILE_ICON src/file_icon.txt)

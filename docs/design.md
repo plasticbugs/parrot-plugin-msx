@@ -104,7 +104,7 @@ selects them. There are no expanded slots.
 
 C-BIOS 0.29 is built in. It's assembled from `vendor/cbios` when the
 plugin is built, and the result is checked against C-BIOS's own ROMs by
-SHA-1. If there's a 32K file at `/MSX/MSX.ROM` on the card, the plugin
+SHA-1. If there's a 32K file at `/MSX/MSXBIOS.BIN` on the card, the plugin
 uses that instead, without the logo ROM. That's for a real MSX1 BIOS,
 which the player provides.
 
@@ -324,7 +324,7 @@ your own.
 
 ## What only the console can show
 
-1. Copy `MSX.CVP` to `/PLUGINS`, and a few `.mx1` files to `/MSX`, and
+1. Copy `MSX.CVP` to `/PLUGINS`, and a few MSX `.rom` files to `/MSX`, and
    pick one. The C-BIOS logo shows, then the game. After RESET, the
    menu's note shows the mapper, then `MSX 60/s 0 late ...`.
 2. Play Nemesis 2, R-Type and Knightmare II for a few minutes each, then
@@ -350,7 +350,7 @@ your own.
 8. In Hydlide II, save in the game, press RESET and start it again. The
    save should still be there, and `Hydlide II.sav` should be on the
    card beside the ROM.
-9. Put a 32K MSX1 BIOS at `/MSX/MSX.ROM`. The game should start without
+9. Put a 32K MSX1 BIOS at `/MSX/MSXBIOS.BIN`. The game should start without
    the C-BIOS logo.
 10. A ROM of 1 MB or more (a MegaROM) should load in a few seconds and
     play. This checks the PSRAM and the XIP cache.
