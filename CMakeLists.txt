@@ -14,8 +14,8 @@ parrotcart_init()
 
 # The same source makes the same file, whenever it's built: the compiler's
 # __DATE__ and __TIME__ (the build date in the binary info) come from
-# SOURCE_DATE_EPOCH, fixed here at the tested build's day, 2026-11-19.
-set(BUILD_EPOCH 1795089600)
+# SOURCE_DATE_EPOCH, fixed here at the build's day, 2026-11-23.
+set(BUILD_EPOCH 1795435200)
 set(CMAKE_C_COMPILER_LAUNCHER ${CMAKE_COMMAND} -E env SOURCE_DATE_EPOCH=${BUILD_EPOCH})
 set(CMAKE_CXX_COMPILER_LAUNCHER ${CMAKE_COMMAND} -E env SOURCE_DATE_EPOCH=${BUILD_EPOCH})
 
@@ -47,6 +47,6 @@ cvcart_features(msx PADS KEYBOARD MOUSE PSRAM CARD)
 
 # The plugin: the ID is ours for good; the version is the release's tag
 # without its v. The cart shows CART-README.md (the start of README.md).
-cvcart_plugin(msx ID parrotcart.msx NAME "MSX" VERSION 0.1.0 BY "Parrot Cart"
+cvcart_plugin(msx ID parrotcart.msx NAME "MSX" VERSION 0.1.2 BY "Parrot Cart"
               ICON src/icon.txt README CART-README.md FILE MSX.CVP
               HOME /MSX OPENS .rom .mx1 .mx2 FILE_ICON src/file_icon.txt)

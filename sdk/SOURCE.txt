@@ -2,3 +2,8 @@ commit deb22c868e88a963b7c2422ef2e51a8febed0591
 date   2026-11-17T23:31:34-08:00
 about  textedit/test/onarm.py: the big text named by its size
 copied 2026-11-18T07:34:18Z by tools/update-sdk.sh
+
+also: back to the menu from the controllers (both fire buttons and * or
+a USB pad's Select and Start held for 2 s), in cvhome.h, cvkernel.c/.h,
+cvframes.c/.h and cvpad.c/.h, added by tools/add-home.py from the plugin
+template (https://github.com/plasticbugs/parrot-plugin-template)

@@ -1,1 +1,4 @@
-The first release. It plays MSX1 cartridge games with C-BIOS built in, or your own BIOS, and supports the ASCII8, ASCII16, Konami, Konami SCC and R-Type cartridges and battery saves. The ColecoVision controller, USB pads, a USB keyboard and a USB mouse all work as MSX controls.
+Changes since 0.1.0:
+
+- A USB pad, keyboard or mouse already on a powered hub when you start is found, and ones plugged in or pulled out while you play are seen.
+- Hold both fire buttons and * on controller 1 for 2 seconds, or Select and Start on a USB pad, to go back to the menu.
